@@ -4136,16 +4136,10 @@ fn resolveUse(analyser: *Analyser, uses: []const Ast.Node.Index, symbol: []const
         defer std.debug.assert(analyser.use_trail.remove(.{ .node = index, .uri = handle.uri }));
 
         const tree = handle.tree;
-        if (tree.nodes.items(.data).len <= index) continue;
 
         const expr = .{ .node = tree.nodes.items(.data)[index].lhs, .handle = handle };
         const expr_type = (try analyser.resolveTypeOfNode(expr)) orelse
             continue;
-
-        if (!expr_type.is_type_val) {
-            // TODO: publish diagnostic; this is a compile error
-            continue;
-        }
 
         if (try expr_type.lookupSymbol(analyser, symbol)) |candidate| {
             if (candidate.handle == handle or candidate.isPublic()) {
