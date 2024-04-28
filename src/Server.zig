@@ -32,7 +32,7 @@ const goto = @import("features/goto.zig");
 const hover_handler = @import("features/hover.zig");
 const selection_range = @import("features/selection_range.zig");
 const diagnostics_gen = @import("features/diagnostics.zig");
-
+const URI = @import("uri.zig");
 const log = std.log.scoped(.zls_server);
 
 // public fields
@@ -517,6 +517,8 @@ fn initializeHandler(server: *Server, _: std.mem.Allocator, request: types.Initi
         for (server.client_capabilities.workspace_folders, workspace_folders) |*dest, src| {
             dest.* = try server.allocator.dupe(u8, src.uri);
         }
+        server.document_store.config.workspace_folders = server.client_capabilities.workspace_folders;
+        try server.document_store.updateHandlesInWorkspaceFolders();
     }
 
     if (request.trace) |trace| {
@@ -777,6 +779,9 @@ fn didChangeWorkspaceFoldersHandler(server: *Server, arena: std.mem.Allocator, n
     }
 
     server.client_capabilities.workspace_folders = try folders.toOwnedSlice(server.allocator);
+
+    server.document_store.config.workspace_folders = server.client_capabilities.workspace_folders;
+    try server.document_store.updateHandlesInWorkspaceFolders();
 }
 
 fn didChangeConfigurationHandler(server: *Server, arena: std.mem.Allocator, notification: types.DidChangeConfigurationParams) Error!void {
@@ -879,7 +884,7 @@ pub fn updateConfiguration(server: *Server, new_config: configuration.Configurat
         }
     }
 
-    server.document_store.config = DocumentStore.Config.fromMainConfig(server.config);
+    server.document_store.config = DocumentStore.Config.fromMainConfig(server.config, server.client_capabilities.workspace_folders);
 
     if (new_zig_exe_path or new_build_runner_path) blk: {
         if (!std.process.can_spawn) break :blk;
@@ -1589,6 +1594,29 @@ fn selectionRangeHandler(server: *Server, arena: std.mem.Allocator, request: typ
 fn workspaceSymbolHandler(server: *Server, arena: std.mem.Allocator, request: types.WorkspaceSymbolParams) Error!ResultType("workspace/symbol") {
     if (request.query.len < 3) return null;
 
+    // TODO: implement Uri -> TrigramData map
+    // to reduce long-term memory usage
+
+    // NOTE: this is not one for loop as
+    // the TODO described above will require
+    // these to be two discrete steps
+
+    for (server.client_capabilities.workspace_folders) |workspace_folder| {
+        const path = URI.parse(arena, workspace_folder) catch return error.InternalError;
+        var dir = std.fs.cwd().openDir(path, .{ .iterate = true }) catch return error.InternalError;
+        defer dir.close();
+
+        var walker = try dir.walk(arena);
+        defer walker.deinit();
+
+        while (walker.next() catch return error.InternalError) |entry| {
+            if (std.mem.eql(u8, std.fs.path.extension(entry.basename), ".zig")) {
+                const uri = URI.pathRelative(arena, workspace_folder, entry.path) catch return error.InternalError;
+                _ = server.document_store.getOrLoadHandle(uri);
+            }
+        }
+    }
+
     var trigrams = std.ArrayListUnmanaged(DocumentScope.Trigram){};
     // TODO: ensure capacity
 
@@ -1608,15 +1636,10 @@ fn workspaceSymbolHandler(server: *Server, arena: std.mem.Allocator, request: ty
     } else |_| return null;
 
     var workspace_symbols = std.ArrayListUnmanaged(types.WorkspaceSymbol){};
-
     var candidates_decl_map = std.AutoArrayHashMapUnmanaged(Analyser.Declaration.Index, void){};
-    defer candidates_decl_map.deinit(arena);
-
     var narrowing_decl_map = std.AutoArrayHashMapUnmanaged(Analyser.Declaration.Index, void){};
-    defer narrowing_decl_map.deinit(arena);
 
-    // TODO: make sure we're only looking at handles that are actually in our workspace
-    doc_loop: for (server.document_store.handles.values()) |handle| {
+    doc_loop: for (server.document_store.handles_in_workspace_folders.values()) |handle| {
         const tree = handle.tree;
         const doc_scope = try handle.getDocumentScope();
 
@@ -1657,7 +1680,6 @@ fn workspaceSymbolHandler(server: *Server, arena: std.mem.Allocator, request: ty
             const name_token = decl.nameToken(tree);
 
             // TODO: integrate with document_symbol.zig for right kind info
-            // TODO: only index/lookup non-locals (I believe that is the correct behavior)
             try workspace_symbols.append(arena, .{
                 .name = tree.tokenSlice(name_token),
                 .kind = .Variable,
@@ -1766,7 +1788,7 @@ pub fn create(allocator: std.mem.Allocator) !*Server {
         .config = .{},
         .document_store = .{
             .allocator = allocator,
-            .config = DocumentStore.Config.fromMainConfig(Config{}),
+            .config = DocumentStore.Config.fromMainConfig(Config{}, &.{}),
             .thread_pool = if (zig_builtin.single_threaded) {} else undefined, // set below
         },
         .job_queue = std.fifo.LinearFifo(Job, .Dynamic).init(allocator),
