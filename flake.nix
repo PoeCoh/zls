@@ -33,7 +33,7 @@
               version = "master";
               meta.mainProgram = "zls";
               src = gitignoreSource ./.;
-              nativeBuildInputs = [zig];
+              nativeBuildInputs = [ zig pkgs.git ];
               dontConfigure = true;
               dontInstall = true;
               doCheck = true;
