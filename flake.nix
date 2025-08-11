@@ -19,7 +19,7 @@
     nixpkgs,
     zig-overlay,
     gitignore,
-    zig-src,
+    zls-src,
   }:
     builtins.foldl' nixpkgs.lib.recursiveUpdate {} (
       builtins.map
