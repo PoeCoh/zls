@@ -41,7 +41,7 @@
                 PACKAGE_DIR=${pkgs.callPackage ./deps.nix {}}
                 if [ ! -d ".git" ]; then
                   git init --initial-branch=master
-                  git remote add origin https://github.com/zigtools/zls
+                  git remote add origin https://github.com/PoeCoh/zls
                   git fetch --filter=blob:none origin
                   git reset --hard origin/master
                 fi
