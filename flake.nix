@@ -7,6 +7,11 @@
 
     gitignore.url = "github:hercules-ci/gitignore.nix";
     gitignore.inputs.nixpkgs.follows = "nixpkgs";
+
+    zls-src = {
+      url = "github:PoeCoh/zls?shallow=0";
+      flake = false;
+    };
   };
 
   outputs = {
@@ -14,6 +19,7 @@
     nixpkgs,
     zig-overlay,
     gitignore,
+    zig-src,
   }:
     builtins.foldl' nixpkgs.lib.recursiveUpdate {} (
       builtins.map
@@ -32,7 +38,8 @@
               name = "zls";
               version = "master";
               meta.mainProgram = "zls";
-              src = gitignoreSource ./.;
+              #src = gitignoreSource ./.;
+              src = zls-src;
               nativeBuildInputs = [ zig pkgs.git ];
               dontConfigure = true;
               dontInstall = true;
