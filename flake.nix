@@ -46,12 +46,12 @@
               doCheck = true;
               buildPhase = ''
                 PACKAGE_DIR=${pkgs.callPackage ./deps.nix {}}
-                if [ ! -d ".git" ]; then
-                  git init --initial-branch=master
-                  git remote add origin https://github.com/PoeCoh/zls
-                  git fetch --filter=blob:none origin
-                  git reset --hard origin/master
-                fi
+                #if [ ! -d ".git" ]; then
+                #  git init --initial-branch=master
+                #  git remote add origin https://github.com/PoeCoh/zls
+                #  git fetch --filter=blob:none origin
+                #  git reset --hard origin/master
+                #fi
                 zig build install --global-cache-dir $(pwd)/.cache --system $PACKAGE_DIR -Dtarget=${target} -Doptimize=ReleaseSafe --color off --prefix $out
               '';
               checkPhase = ''
